@@ -1,0 +1,408 @@
+---
+title: "Luckybit data analysis"
+output: html_notebook
+---
+
+Load packages
+
+```{r}
+library(tidyverse)
+```
+
+# Data load and prep
+
+## Luckybit data
+
+Load files created in 'data_prep.R'and 'player_clustering.R'
+
+```{r}
+games_table <- read.csv(".\\data\\luckybit_games_table.csv")
+luckybit_addrIDs_raw <- read.csv(".\\data\\luckybit_games_address.csv")
+bets_complete_raw <- read.csv(".\\data\\luckybit_bets_usered.csv")
+user_clustering <- read.csv(".\\data\\clustered_users.csv")
+```
+
+Add payout variations (CV or coefficient of variation) to the games.
+
+(Resulting table used in table 1)
+
+```{r}
+luckybit_addrIDs <- 
+  games_table %>%
+  pivot_longer(c("blue","green","yellow","red"), names_to = "Name", values_to = "multiplier") %>%
+  group_by(Name) %>%
+  mutate(exp_ret = sum(p_win*multiplier)) %>%
+  summarize(variance = sum(p_win * (multiplier - exp_ret)^2), 
+            std_dev = sqrt(variance), 
+            exp_ret = min(exp_ret)) %>%
+  mutate(coef_of_var = std_dev/exp_ret) %>%
+  left_join(luckybit_addrIDs_raw, by = "Name")
+
+luckybit_addrIDs
+```
+
+Filter bets based on clusters
+
+```{r}
+bets_complete_list = list(bets_complete_raw %>%
+  left_join(user_clustering, by = "userID")
+)
+  
+  
+for (i in seq(3))
+{
+bets_complete_list[[i+1]] = bets_complete_raw %>%
+  left_join(user_clustering, by = "userID") %>%
+  filter(cluster == i)
+}
+```
+
+Calculate all the player statistics on a daily basis:
+
+- count: count of daily bets
+- players: count of distinct players/users per calendar day
+- count_per player: average number of count per player per calendar day
+- daily_rate_n: average number of bets placed by players on calerndar day
+- daily_rate_value: average number of bets placed by players on calerndar day weighted by bet value
+- cv_daily_n: daily average CV of games played
+- cv_daily_value: daily average CV of games played weighted by bet value
+- bet_median: median of daily bets
+- bet_iqr: interquartile range of dailiy bets
+- bet_logmean: average of daily bets measured on a log10 scale
+- game_median: daily median bet placed at specific game
+- game_iqr: daily iqr of bets placed at specific game
+- game_n: daily number of bets placed at specific game
+- game_risk_ratio: ratio of number of bets placed on riskier games (red + yellow) vs all games
+
+```{r}
+games_consolidated_list = list()
+
+
+for (i in seq(4))
+{
+bets_complete = bets_complete_list[[i]]
+  
+games_players_daily <- bets_complete %>%
+  mutate(date = as.Date(as.POSIXct(block_timestamp, origin="1970-01-01"))) %>%
+  group_by(date) %>%
+  summarize(count = n(),
+            players = n_distinct(userID),
+            count_per_player = n()/n_distinct(userID))
+
+games_cv <- bets_complete %>%
+  mutate(date = as.Date(as.POSIXct(block_timestamp, origin="1970-01-01"))) %>%
+  left_join(luckybit_addrIDs %>% select(addrID, game_name = Name, variance, exp_ret), by = "addrID")  %>%
+  group_by(date) %>%
+  mutate(daily_value = sum(value)) %>%
+  mutate(daily_n = n()) %>%
+  ungroup() %>%
+  group_by(date, game_name) %>%
+  mutate(daily_rate_n = n()/min(daily_n)) %>%
+  mutate(daily_rate_value = sum(value)/min(daily_value)) %>%
+  ungroup() %>%
+  group_by(date) %>%
+  summarize(
+    sigma_daily_n = sqrt(sum(daily_rate_n^2 * variance)),
+    sigma_daily_value = sqrt(sum(daily_rate_value^2 * variance)),
+    exp_ret_daily = sum(exp_ret),
+    cv_daily_n = sigma_daily_n/exp_ret_daily,
+    cv_daily_value = sigma_daily_value/exp_ret_daily,
+    bet_median = median(value),
+    bet_iqr = IQR(value),
+    bet_logmean = mean(log10(value))
+  ) %>%
+  select(-all_of(c('sigma_daily_n','sigma_daily_value','exp_ret_daily')))
+
+games_bets <- bets_complete %>%
+  mutate(date = as.Date(as.POSIXct(block_timestamp, origin="1970-01-01"))) %>%
+  left_join(luckybit_addrIDs %>% select(addrID, game_name = Name, variance, exp_ret), by = "addrID")  %>%
+  ungroup() %>%
+  group_by(date, game_name) %>%
+  summarize(game_median = median(value),
+            game_iqr = IQR(value),
+            game_n = n()) %>%
+  pivot_wider(names_from = game_name, values_from = c(game_median, game_iqr, game_n), values_fill = 0) %>%
+  mutate(game_risk_ratio = (game_n_red + game_n_yellow)/(game_n_red + game_n_yellow + game_n_blue + game_n_green))
+
+
+games_consolidated <- games_players_daily %>%
+  left_join(games_cv, by = 'date') %>%
+  left_join(games_bets, by = 'date') %>%
+  filter(count >0)
+
+games_consolidated_list[[i]] = games_consolidated
+
+}
+
+```
+
+## Bitcoin price data
+
+Load price data from coinmarketcap. The dataset contains:
+
+- timeOpen: Market opening timestamp
+- timeClose: Market closing timestamp
+- timeHigh: Timestamp of highest daily price
+- timeLow: Timestamp of lowest daily price
+- name: name of product (only USD/BTC in this file)
+- open: daily opening price (USD/BTC)
+- high: daily highest price (USD/BTC)
+- low: daily lowest price (USD/BTC)
+- close: daily closing price (USD/BTC)
+- volume: volume traded between opening and closing
+- marketCap: closing price times total BTC in circulation
+
+Times are defined as UTC
+
+```{r}
+bitcoin_price_data_raw <- read_delim("data/bitcoin_historical_data_coinmarketcap.csv", delim = ";", escape_double = FALSE, trim_ws = TRUE)
+```
+
+Create daily descriptors of the USD/BTC exchange price:
+
+- MID: mean of high and low price
+- MIDlog: natural logarithm of MID
+- HLM: pricespan (high - low) relative to the MID price of t
+- HLMlag: lag of HLM, ergo HLM(t-1)
+- MIDlag: lag of MID, ergo MID(t-1)
+- MIDret: price return compared to t-1
+- MIDretlog: natural logarithm of MIDret
+- MIDret_p_cat: 1 if price return is positive, 0 if negative
+- MIDret_p: MIDret if it is positve, 0 otherwise
+- MIDret_n: MIDret if it is negative, 0 otherwise
+- MIDret7: price return compared to t-7
+- MIDret7log: natural logarithm of MIDret7
+- HIGH7: highest price of the last 7 days
+- LOW7: lowest price of the last 7 days
+- HLM7: weekly pricespan (HIGH7 - HLM7) relative to the MID price of t
+- MIDret_p_cat: 1 if price return over last week is positive, 0 if negative
+- MIDret_p: MIDret7 if it is positve, 0 otherwise
+- MIDret_n: MIDret7 if it is negative, 0 otherwise
+
+```{r}
+bitcoin_price_data <- bitcoin_price_data_raw %>%
+  arrange(timeOpen) %>%
+  mutate(MID = (high + low)/2) %>%
+  mutate(MIDlog = log(MID)) %>%
+  mutate(HLM = (high - low)/MID) %>%
+  mutate(HLMlag = lag(HLM)) %>%
+  mutate(MIDlag = lag(MID)) %>%
+  mutate(MIDret = MID/lag(MID)-1) %>%
+  mutate(MIDretlog = log(MIDret)) %>%
+  mutate(MIDret_p_cat = if_else(MIDret >= 1, 1, 0)) %>%
+  mutate(MIDret_p = if_else(MIDret >= 1, MIDret, 1)) %>%
+  mutate(MIDret_n = if_else(MIDret <= 1, MIDret, 1)) %>%
+  mutate(MIDret7 = MID/lag(MID, n = 7)-1) %>%
+  mutate(MIDret7log = log(MIDret7)) %>%
+  mutate(HIGH7 = pmax(high, 
+                     lag(high,1), 
+                     lag(high,2), 
+                     lag(high,3), 
+                     lag(high,4), 
+                     lag(high,5), 
+                     lag(high,6), 
+                     na.rm = TRUE)) %>%
+  mutate(LOW7 = pmin(low, 
+                     lag(low,1), 
+                     lag(low,2), 
+                     lag(low,3), 
+                     lag(low,4), 
+                     lag(low,5), 
+                     lag(low,6), 
+                     na.rm = TRUE)) %>%
+  mutate(HLM7 = (HIGH7 - LOW7)/MID) %>%
+  mutate(MIDret7_p_cat = if_else(MIDret7 >= 1, 1, 0)) %>%
+  mutate(MIDret7_p = if_else(MIDret7 >= 1, MIDret7, 1)) %>%
+  mutate(MIDret7_n = if_else(MIDret7 <= 1, MIDret7, 1))
+  
+
+ggplot(bitcoin_price_data, aes(x = timeOpen)) +
+  #geom_line(aes(y = HIGH7, color = "HIGH7")) +
+  #geom_line(aes(y = LOW7, color = "LOW7")) +
+  geom_line(aes(y = MID, color = "MID")) +
+  labs(title = "Price v time", x = "Date", y = "USD/BTC") +
+  theme_minimal()
+```
+
+## Combined datasets
+
+Selecting target and predictor variables
+
+```{r}
+
+
+
+target_variables = c("count_per_player", "bet_logmean", "cv_daily_n")
+predictor_variables = c("MID","MIDret","HLM", "MIDret7","HLM7")
+
+time_series_consolidated_list = list()
+
+for (i in seq(4))
+{
+games_consolidated = games_consolidated_list[[i]]
+
+time_series_consolidated <- bitcoin_price_data %>%
+  select(date = timeOpen, all_of(predictor_variables)) %>%
+  inner_join(games_consolidated %>% select(date, all_of(target_variables)), by = 'date') %>%
+  drop_na()
+
+time_series_consolidated_list[[i]] = time_series_consolidated
+}
+```
+
+# Analysis
+
+## Variable selection with LASSO
+
+```{r}
+lasso_coefs_list <- list()
+
+for (i in seq(4))
+{
+  lasso_coefs_list[[i]] <- list()
+  for (j in target_variables){
+  set.seed(137)
+  #defining model
+  f <- as.formula(paste0("y ~", paste(predictor_variables, collapse = " + ")))
+  #creating target dataset and scaling it
+  y <- time_series_consolidated_list[[i]] %>% 
+    select(all_of(j)) %>% 
+    scale()
+  #creating predictor dataset and scaling it
+  x <- model.matrix(f, time_series_consolidated_list[[i]])[, -1] %>% scale()
+  #training the model
+  lasso_multi <- glmnet::cv.glmnet(x, y, family = "gaussian") #default is lasso
+  #saving coefficients
+  lasso_coefs_list[[i]][[j]] <- coef(lasso_multi, s = lasso_multi$lambda.min)
+  }
+}
+
+coef(lasso_multi, s = "lambda.min")
+```
+
+## Training GLM models 
+
+Using only the selected explanatory variables
+
+
+```{r}
+glm_model <- list()
+
+for (i in seq(4))
+{
+  glm_model[[i]] <- list()
+  for(j in target_variables){
+    coef_list <- lasso_coefs_list[[i]][[j]]
+  
+    selected_predictors <- unique(unlist(
+      rownames(coef_list)[as.vector(coef_list != 0)][-1]  # Exclude the intercept
+   ))
+    
+    if(!rlang::is_empty(selected_predictors)){#if there is nothing left by the lassso, do not substitute a model
+      selected_formula <- as.formula(paste0(j, " ~ ", paste(selected_predictors, collapse = " + ")))
+    }else{
+      selected_formula <- as.formula(paste0(j, " ~ 1"))
+    }
+      
+      data = time_series_consolidated_list[[i]] %>% 
+        select(all_of(j), all_of(selected_predictors)) %>% 
+        scale() %>% 
+        as_tibble()
+    
+      glm_model[[i]][[j]] <- glm(selected_formula, data = data)
+  }
+}
+```
+
+## Extract coefficient estimates
+```{r}
+coefficients_all <- list()
+for (i in seq(4))
+{
+  for(j in target_variables){
+      coefficients_all[[paste0(i,j)]] <- glm_model[[i]][[j]] %>%
+        broom::tidy() %>%
+        select(term, estimate, p.value) %>%
+        mutate(cluster = i, target = j)
+    
+  }
+}
+bind_rows(coefficients_all)
+```
+
+## Extract goodness of fit measures
+
+```{r}
+
+
+fit_measure_all <- list()
+for (i in seq(4))
+{
+  for(j in target_variables){
+      fit_measure_all[[paste0(i,j)]] <- glm_model[[i]][[j]] %>%
+        broom::glance() %>%
+        mutate(R2 = 1- (deviance / null.deviance)) %>%
+        mutate(p = nobs-df.residual) %>%
+        mutate(R2adj = 1 - (1 - R2) * (nobs - 1) / (nobs - p - 1)) %>%
+        select(R2, R2adj, AIC) %>%
+        mutate(cluster = i, target = j)
+  }
+}
+bind_rows(fit_measure_all) %>%
+  arrange(target, cluster)
+```
+
+Some human readeble visuals for the fit variables
+
+(Values used in Table 3)
+
+```{r}
+fit_measure_all %>%
+  bind_rows() %>%
+  select(cluster, target, R2adj) %>%
+  pivot_wider(names_from = target, values_from = R2adj) %>%
+  round(digits = 3)
+```
+
+## Final coefficients
+
+Again, human readable table. 9-s are placeholders of variables dropped by LASSO
+
+(Values used in Table 3)
+
+```{r}
+coefficients_all %>%
+  bind_rows() %>%
+  select(cluster, target, term, estimate) %>%
+  pivot_wider(names_from = term, values_from = estimate, values_fill = 9) %>%
+  mutate(across(where(is.numeric), round, 4)) %>%
+  arrange(target, cluster) %>%
+  select(cluster, target, "(Intercept)", all_of(predictor_variables))
+```
+
+Also visualized as barplots using p.values for highlight
+
+```{r}
+coefficients_all %>%
+  bind_rows() %>%
+  filter(target %in% c("bet_logmean","count_per_player","cv_daily_n")) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(p_opaq = ifelse(p.value < .01,1,.1)) %>%
+  ggplot(aes(x = cluster, y = estimate, fill = term, alpha = p_opaq)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_alpha_continuous(guide = "none") + # Set opacity range
+  labs(
+    title = "Dodged and Grouped Bar Plot",
+    x = "Cluster",
+    y = "Estimate",
+    fill = "Estimator"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    text = element_text(size = 12)
+  ) +
+  facet_wrap(~target, ncol = 1)
+```

@@ -66,6 +66,27 @@ The columns featured in the dataset (names in the first row):
   * *userID*  assigned based on addrID_player using the methods and dataset of (**2**) [integer]
   * *cluster* calculated in *player_clustering.Rmd* as 1 - All players, 2 - Casual, 3 - Regular, 4 - Extreme [integer]
 
+### Clustered users table
+
+Bitcoin to USD exchange rate data featured in *bitcoin_historical_data_coinmarketcap.csv*.
+
+This dataset has been downloaded as of 2024-09-02 from [Coinmarketcap]([https://web.archive.org/web/20150314200358/http://luckyb.it/](https://coinmarketcap.com/currencies/bitcoin/historical-data/))
+
+The columns featured in the dataset (names in the first row):
+
+  * *timeOpen*  market open, datetime UTC [string]
+  * *timeClose*  market close, datetime UTC [string]
+  * *timeHigh*  timing of daily high, datetime UTC [string]
+  * *timeLow*  timing of daily low, datetime UTC [string]
+  * *name*  arbitrary ID from Coinmarketcap, uniform, dropable [integer]
+  * *open*  daily opening exchange rate (USD/BTC) [float]
+  * *high*  highest daily exchange rate (USD/BTC) [float]
+  * *low*  lowest daily exchange rate (USD/BTC) [float]
+  * *close*  daily closing exchange rate (USD/BTC) [float]
+  * *volume*  daily total traded volume (BTC) [float]
+  * *marketCap*  total Bitcoin market capitalization in USD [float]
+  * *timeStamp*  timing of data recording, datetime UTC [string]
+
 ## Replicating research
 
 Use the R workbook *player_clustering.Rmd* to reproduce clustering results presented in (**1**).

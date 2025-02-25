@@ -70,7 +70,7 @@ The columns featured in the dataset (names in the first row):
 
 Use the R workbook *player_clustering.Rmd* to reproduce clustering results presented in (**1**).
 
-Use the R workbook *hot_hand_cold_head.Rmd* to reproduce research results presented in (**1**).
+Use the R workbook *analysis.Rmd* to reproduce research results presented in (**1**).
 
 With questions about the dataset or the process, contact Máté Sándor (sampaat at gmail dot com).
 

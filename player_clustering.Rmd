@@ -1,0 +1,268 @@
+---
+title: "Clustering players"
+output: html_notebook
+---
+
+Load packages
+
+```{r}
+library(tidyverse)
+#also uses trimcluster 0.1-5 for trimmed clustering
+#also uses fpc 2.2-13 to derive statistics of clustering goodness
+```
+# Data load and prep
+
+Load files created in 'data_prep.R'
+
+```{r}
+games_table <- read.csv(".\\data\\luckybit_games_table.csv")
+luckybit_addrIDs_raw <- read.csv(".\\data\\luckybit_games_address.csv")
+bets_complete <- read.csv(".\\data\\luckybit_bets_usered.csv")
+```
+
+Add payout variations (CV or coefficient of variation) to the games
+
+```{r}
+luckybit_addrIDs <- 
+  games_table %>%
+  pivot_longer(c("blue","green","yellow","red"), names_to = "Name", values_to = "multiplier") %>%
+  group_by(Name) %>%
+  mutate(exp_ret = sum(p_win*multiplier)) %>%
+  summarize(variance = sum(p_win * (multiplier - exp_ret)^2), 
+            std_dev = sqrt(variance), 
+            exp_ret = min(exp_ret)) %>%
+  mutate(coef_of_var = std_dev/exp_ret) %>%
+  left_join(luckybit_addrIDs_raw, by = "Name")
+
+luckybit_addrIDs
+```
+
+
+Calculate measures for all identified users:
+
+- daily_n_avg: number of bets placed per days active
+- days_played: distict calendar days with placed bets
+- playspan: number of days between first and last active calendar date
+
+- n_games: number of bets placed
+- avg_bet: mean value of placed bets
+- avg_log_bet: mean value of placed bets on a log10 scale
+- max_bet: maximum of bet placed
+- max_cv: maximum of coefficient of vairance of games chosen
+- avg_cv: average coefficient of variance chosen over games chosen
+- log_avg_cv: avg_cv but weighted with logarithmic bet size
+- total_bet: total ammount of bet placed
+
+```{r}
+daily_avg <- bets_complete %>%
+  mutate(date = as.Date(as.POSIXct(block_timestamp, origin="1970-01-01"))) %>%
+  group_by(userID, date) %>%
+  summarize(daily_n = n()) %>%
+  group_by(userID) %>%
+  summarize(daily_n_avg = sum(daily_n)/n(),
+            days_played = n(),
+            playspan = abs(as.integer(difftime(max(date), min(date), units = "days")))+1
+            )
+
+
+gamer_stats <- bets_complete %>%
+  left_join(luckybit_addrIDs %>% select(addrID, game_name = Name, coef_of_var), by = "addrID") %>%
+  group_by(userID) %>%
+  summarize(
+    n_games = n(),
+    avg_bet = mean(value),
+    avg_log_bet = mean(log10(value)),
+    max_bet = max(value),
+    max_cv = max(coef_of_var),
+    avg_cv = sum(coef_of_var)/n(),
+    log_avg_cv = sum(log10(value) * coef_of_var)/sum(log10(value)),
+    total_bet = sum(value)
+  ) %>%
+  left_join(daily_avg, by = "userID")
+
+gamer_stats
+```
+
+# Visual inspection of measures over the population
+
+## Number of games
+
+```{r}
+gamer_stats %>%
+  ggplot(aes(x = n_games)) +
+  geom_histogram(binwidth = 0.5, fill = "blue", color = "black") +  # Histogram
+  scale_x_log10() +  # Logarithmic transformation on x-axis
+  labs(x = "Number of bets per user (log 10 scale)",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+## Mean logarithmic bet per user
+
+```{r}
+gamer_stats %>%
+  ggplot(aes(x = avg_log_bet)) +
+  geom_histogram(binwidth = 0.5, fill = "blue", color = "black") +  # Histogram
+  #scale_x_log10() +  # Logarithmic transformation on x-axis
+  labs(x = "mean log bet per user",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+## Median bet per user (log 10 scale)
+
+```{r}
+gamer_stats %>%
+  ggplot(aes(x = max_bet)) +
+  geom_histogram(binwidth = 0.5, fill = "blue", color = "black") +  # Histogram
+  scale_x_log10() +  # Logarithmic transformation on x-axis
+  labs(x = "Median bet per user (log 10 scale)",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+## Maximum risk taken per user
+
+```{r}
+gamer_stats %>%
+  ggplot(aes(x = max_cv)) +
+  geom_histogram(binwidth = 0.5, fill = "blue", color = "black") +  # Histogram
+  #scale_x_log10() +  # Logarithmic transformation on x-axis
+  labs(x = "Max risk",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+## Average risk taken per user
+
+```{r}
+gamer_stats %>%
+  ggplot(aes(x = avg_cv)) +
+  geom_histogram(fill = "blue", color = "black") +  # Histogram
+  scale_x_log10() +  # Logarithmic transformation on x-axis
+  labs(x = "avg risk",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+## Total bet per user
+
+```{r}
+gamer_stats %>%
+  ggplot(aes(x = total_bet)) +
+  geom_histogram(fill = "blue", color = "black") +  # Histogram
+  scale_x_log10() +  # Logarithmic transformation on x-axis
+  labs(title = "Histogram with Logarithmic X-Axis",
+       x = "total bet",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+## Daily bets average per user
+
+```{r}
+gamer_stats %>%
+  ggplot(aes(x = daily_n_avg)) +
+  geom_histogram(fill = "blue", color = "black") +  # Histogram
+  scale_x_log10() +  # Logarithmic transformation on x-axis
+  labs(title = "Histogram with Logarithmic X-Axis",
+       x = "daily bets average",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+## Number of days active per player
+
+```{r}
+gamer_stats %>%
+  ggplot(aes(x = days_played)) +
+  geom_histogram(fill = "blue", color = "black") +  # Histogram
+  scale_x_log10() +  # Logarithmic transformation on x-axis
+  labs(title = "Histogram with Logarithmic X-Axis",
+       x = "days played",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+## Playspan per player
+
+```{r}
+gamer_stats %>%
+  ggplot(aes(x = playspan)) +
+  geom_histogram(fill = "blue", color = "black") +  # Histogram
+  scale_x_log10() +  # Logarithmic transformation on x-axis
+  labs(title = "Histogram with Logarithmic X-Axis",
+       x = "days between start and finish",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+# Clustering
+
+```{r}
+scaled_gamer_stats <- gamer_stats %>%
+  mutate(
+    log_max_bet = log10(max_bet),
+    log_total_bet = log10(total_bet)
+  ) %>%
+  select(n_games, 
+         days_played, 
+         avg_cv, 
+         log_max_bet, 
+         log_total_bet) %>%
+  scale()
+
+set.seed(123) #fix seed
+trim_parameter = .01 #set trimming parameter to 1%
+
+km.pred <- trimcluster::trimkmeans(scaled_gamer_stats, 2, trim = trim_parameter, runs = 100)
+
+#check clustering descriptors
+
+scaled_gamer_stats_2 <- scaled_gamer_stats %>% 
+  bind_cols(cluster = km.pred$classification) %>%
+  filter(cluster != 3) %>%
+  select(-cluster)
+
+classific <- km.pred$classification[km.pred$classification != 3]
+```
+
+## Cluster validation statistics
+
+```{r}
+fpc::cluster.stats(d = dist(scaled_gamer_stats_2), classific)
+```
+
+## Median statistics of clusters
+
+Results used in Table 2.
+
+```{r}
+zero_label <- rep(0,length(km.pred$classification))
+
+gamer_stats_clustered <- gamer_stats %>% # add the unclustered sample as cluster "zero"
+  cbind(cluster = km.pred$classification) %>%
+  rbind(gamer_stats %>%
+         cbind(cluster =zero_label))
+
+aggregate(gamer_stats_clustered, by=list(cluster=gamer_stats_clustered$cluster), median)
+```
+
+## IQR statistics of clusters
+
+Results used in Table 2.
+
+```{r}
+
+aggregate(gamer_stats_clustered, by=list(cluster=gamer_stats_clustered$cluster), IQR, na.rm = T)
+```
+
+# Save clustering
+
+```{r}
+gamer_stats %>%
+  select(userID) %>%
+  cbind(cluster = km.pred$classification) %>%
+  write.csv(".\\data\\clustered_users.csv")
+```
+

@@ -7,6 +7,7 @@ Load packages
 
 ```{r}
 library(tidyverse)
+WORKDIR = ".\\data"
 ```
 
 # Data load and prep
@@ -216,12 +217,27 @@ bitcoin_price_data <- bitcoin_price_data_raw %>%
   mutate(MIDret7_n = if_else(MIDret7 <= 1, MIDret7, 1))
   
 
+y2scale <- 2000
+y1nameA <- latex2exp::TeX("$p_t$ (USD/BTC)")
+y1nameB <- latex2exp::TeX("$p_t$")
+y2name <- latex2exp::TeX("$Vp_t^w$")
+
 ggplot(bitcoin_price_data, aes(x = timeOpen)) +
-  #geom_line(aes(y = HIGH7, color = "HIGH7")) +
-  #geom_line(aes(y = LOW7, color = "LOW7")) +
   geom_line(aes(y = MID, color = "MID")) +
-  labs(title = "Price v time", x = "Date", y = "USD/BTC") +
+  geom_line(aes(y = HLM7*y2scale, color = "HLM7")) +
+  labs(x = "Date", color = "") +
+   scale_y_continuous(
+    
+    # Features of the first axis
+    name = y1nameA,
+    
+    # Add a second axis and specify its features
+    sec.axis = sec_axis( trans=~./y2scale, name=y2name)
+  )+
+  scale_color_discrete(labels = c(y1nameB, y2name))+
   theme_minimal()
+setwd(WORKDIR)
+ggsave("figure_1.pdf", device = "pdf", width = 36.52,  height = 12.63,  units = "cm")
 ```
 
 ## Combined datasets
@@ -383,26 +399,53 @@ coefficients_all %>%
 Also visualized as barplots using p.values for highlight
 
 ```{r}
+term_labels <- tibble(
+  term = c("MID", "MIDret", "HLM", "MIDret7", "HLM7"),
+  term_label = c(latex2exp::TeX("$p_t$"),
+            latex2exp::TeX("$\\delta p_t$"),
+            latex2exp::TeX("$Vp_t$"),
+            latex2exp::TeX("$\\delta p_t^w$"),
+            latex2exp::TeX("$Vp_t^w$"))
+)
+
+cluster_labels <- tibble(
+  cluster = c(1, 2, 3, 4),
+  cluster_label = c("All players", "Casual", "Comitted", "Extreme")
+)
+
+target_labels <- c("bet_logmean" = "widetilde(log[10] * B[t])", 
+                   "count_per_player" = "widetilde(N[t])",
+                   "cv_daily_n" = "widetilde(CV[t])"
+                   )
+
+
 coefficients_all %>%
   bind_rows() %>%
   filter(target %in% c("bet_logmean","count_per_player","cv_daily_n")) %>%
+  left_join(term_labels, by = "term") %>%
+  left_join(cluster_labels, by = "cluster") %>%
   filter(term != "(Intercept)") %>%
-  mutate(p_opaq = ifelse(p.value < .01,1,.1)) %>%
-  ggplot(aes(x = cluster, y = estimate, fill = term, alpha = p_opaq)) +
+  mutate(p_opaq = ifelse(p.value < .002,1,.2)) %>%
+  ggplot(aes(x = cluster_label, y = estimate, fill = term, alpha = p_opaq)) +
   geom_bar(stat = "identity", position = "dodge") +
   scale_alpha_continuous(guide = "none") + # Set opacity range
+  scale_fill_manual(values = c("MID" = "blue", "MIDret" = "red", "HLM" = "green", "MIDret7" = "purple", "HLM7" = "orange"), 
+                    labels = setNames(term_labels$term_label, term_labels$term)) + 
   labs(
-    title = "Dodged and Grouped Bar Plot",
+    title = "",
     x = "Cluster",
-    y = "Estimate",
-    fill = "Estimator"
+    y = "Coefficient",
+    fill = "Price marker"
   ) +
   theme_minimal() +
   theme(
-    legend.position = "top",
+    legend.position = "bottom",
     legend.title = element_text(size = 12),
     legend.text = element_text(size = 10),
     text = element_text(size = 12)
   ) +
-  facet_wrap(~target, ncol = 1)
+  facet_wrap(~target, ncol = 1, labeller = as_labeller(target_labels, default = label_parsed))
+
+setwd(WORKDIR)
+ggsave("figure_2.pdf", device = "pdf", width = 15,  height = 22,  units = "cm")
 ```

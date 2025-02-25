@@ -1,5 +1,6 @@
 data/
 .Rhistory
+*.html
 .nb
-.Rproj
-.html
+.Rproj*
+*.Rproj

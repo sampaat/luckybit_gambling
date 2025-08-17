@@ -4,3 +4,4 @@ data/
 .nb
 .Rproj*
 *.Rproj
+.Rproj.user

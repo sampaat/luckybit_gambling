@@ -11,7 +11,7 @@ The gambling dataset was created using the transactional data extractable from t
 
 A representative state of the game's website is observable [as a web archive.](https://web.archive.org/web/20150314200358/http://luckyb.it/) (**5**)
 
-**To acces the dataset, click here:** [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5600259.svg)](https://doi.org/10.5281/zenodo.5600259)
+**To acces the dataset, click here:** [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14926295.svg)](https://doi.org/10.5281/zenodo.14926295)
 
 ## The prepared gambling dataset
 
@@ -66,6 +66,27 @@ The columns featured in the dataset (names in the first row):
   * *userID*  assigned based on addrID_player using the methods and dataset of (**2**) [integer]
   * *cluster* calculated in *player_clustering.Rmd* as 1 - All players, 2 - Casual, 3 - Regular, 4 - Extreme [integer]
 
+### Clustered users table
+
+Bitcoin to USD exchange rate data featured in *bitcoin_historical_data_coinmarketcap.csv*.
+
+This dataset has been downloaded as of 2024-09-02 from [Coinmarketcap]([https://web.archive.org/web/20150314200358/http://luckyb.it/](https://coinmarketcap.com/currencies/bitcoin/historical-data/))
+
+The columns featured in the dataset (names in the first row):
+
+  * *timeOpen*  market open, datetime UTC [string]
+  * *timeClose*  market close, datetime UTC [string]
+  * *timeHigh*  timing of daily high, datetime UTC [string]
+  * *timeLow*  timing of daily low, datetime UTC [string]
+  * *name*  arbitrary ID from Coinmarketcap, uniform, dropable [integer]
+  * *open*  daily opening exchange rate (USD/BTC) [float]
+  * *high*  highest daily exchange rate (USD/BTC) [float]
+  * *low*  lowest daily exchange rate (USD/BTC) [float]
+  * *close*  daily closing exchange rate (USD/BTC) [float]
+  * *volume*  daily total traded volume (BTC) [float]
+  * *marketCap*  total Bitcoin market capitalization in USD [float]
+  * *timeStamp*  timing of data recording, datetime UTC [string]
+
 ## Replicating research
 
 Use the R workbook *player_clustering.Rmd* to reproduce clustering results presented in (**1**).
@@ -79,5 +100,5 @@ With questions about the dataset or the process, contact Máté Sándor (sampaat
   1. Bakó, B., Sándor, M.C. (2025). How Bitcoin’s Ups and Downs Are Changing the Way You Bet
   2. Kondor, D., Pósfai, M., Csabai, I., & Vattay, G. (2014). Do the rich get richer? An empirical analysis of the BitCoin transaction network. PLoS ONE, 9(2), e86197. https://doi.org/10.1371/journal.pone.0086197
   3. https://doi.org/10.5061/dryad.qz612jmcf
-  4. [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5600259.svg)](https://doi.org/10.5281/zenodo.5600259)
+  4. [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14926295.svg)](https://doi.org/10.5281/zenodo.14926295)
   5. [https://web.archive.org/web/20150314200358/http://luckyb.it/](https://web.archive.org/web/20150314200358/http://luckyb.it/)

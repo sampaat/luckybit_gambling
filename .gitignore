@@ -5,3 +5,4 @@ data/
 .Rproj*
 *.Rproj
 .Rproj.user
+.RData
